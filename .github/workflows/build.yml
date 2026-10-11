@@ -160,6 +160,21 @@ jobs:
         kernel_version: ${{ inputs.kernel_version }}
         os_patch_level: ${{ inputs.os_patch_level }}
 
+    - name: Apply RMNET UDP VoIP Fixes
+      working-directory: ${{ github.workspace }}/kernel/common
+      shell: bash
+      run: |
+        # 1. Enable BPF Routing and MSS Clamping in GKI defconfig
+        echo "CONFIG_CGROUP_BPF=y" >> arch/arm64/configs/gki_defconfig
+        echo "CONFIG_BPF_JIT=y" >> arch/arm64/configs/gki_defconfig
+        echo "CONFIG_NETFILTER_XT_TARGET_TCPMSS=y" >> arch/arm64/configs/gki_defconfig
+        
+        # 2. Disable RXCSUM and GRO in rmnet driver to fix UDP drops
+        if [ -f "drivers/net/ethernet/qualcomm/rmnet/rmnet_vnd.c" ]; then
+          sed -i 's/NETIF_F_RXCSUM | NETIF_F_GRO/0/g' drivers/net/ethernet/qualcomm/rmnet/rmnet_vnd.c
+          sed -i 's/dev->hw_features |= (NETIF_F_RXCSUM | NETIF_F_GRO);/dev->hw_features \&= ~(NETIF_F_RXCSUM | NETIF_F_GRO);/g' drivers/net/ethernet/qualcomm/rmnet/rmnet_vnd.c
+        fi
+
     - name: Set Build Timestamp from Kernel Commit
       shell: bash
       run: |
@@ -760,8 +775,8 @@ jobs:
                  | if . == null then "" else (.archive_download_url + "\t" + .digest) end' \
                 "$page_file")"
 
-              items="$(jq '(.artifacts | length) // 0' "$page_file")"
-              if [ "$items" -lt 100 ] || [ -n "$match" ]; then
+              items="$(jq '(.artifacts \vert{} length) // 0' "$page_file")"
+              if [ "$items" -lt 100 ] \vert{}\vert{} [ -n "$match" ]; then
                 break
               fi
               page=$((page + 1))
@@ -770,7 +785,7 @@ jobs:
             if [ -n "$match" ]; then
               break
             fi
-            echo "  artifact '$artifact_name' not listed yet (attempt ${attempt}/6); re-querying in 10s" >&2
+            echo "  artifact '$artifact_name' not listed yet (attempt${attempt}/6); re-querying in 10s" >&2
             sleep 10
           done
 
